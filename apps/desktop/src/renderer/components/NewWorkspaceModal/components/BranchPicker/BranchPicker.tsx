@@ -54,7 +54,7 @@ export function BranchPicker({
 			fetchMutation.mutate({ projectId });
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [projectId]);
+	}, [projectId, fetchMutation.isPending, fetchMutation.mutate]);
 
 	const filteredLocal = (branches?.local ?? []).filter((b) =>
 		b.toLowerCase().includes(search.toLowerCase()),
