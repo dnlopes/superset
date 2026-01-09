@@ -313,3 +313,128 @@ export async function initializeWorkspaceWorktree({
 		manager.releaseProjectLock(projectId);
 	}
 }
+
+export interface ExistingBranchInitParams {
+	workspaceId: string;
+	projectId: string;
+	worktreeId: string;
+	worktreePath: string;
+	branch: string;
+	mainRepoPath: string;
+}
+
+/**
+ * Background initialization for workspace from existing branch.
+ * Similar to initializeWorkspaceWorktree but uses existing branch instead of creating new.
+ */
+export async function initializeExistingBranchWorktree({
+	workspaceId,
+	projectId,
+	worktreeId,
+	worktreePath,
+	branch,
+	mainRepoPath,
+}: ExistingBranchInitParams): Promise<void> {
+	const manager = workspaceInitManager;
+
+	try {
+		await manager.acquireProjectLock(projectId);
+
+		if (manager.isCancellationRequested(workspaceId)) {
+			return;
+		}
+
+		// Step 1: Sync with remote
+		manager.updateProgress(workspaceId, "syncing", "Syncing with remote...");
+		await refreshDefaultBranch(mainRepoPath);
+
+		if (manager.isCancellationRequested(workspaceId)) {
+			return;
+		}
+
+		// Step 2: Fetch latest
+		manager.updateProgress(workspaceId, "fetching", "Fetching latest changes...");
+		const hasRemote = await hasOriginRemote(mainRepoPath);
+		if (hasRemote) {
+			try {
+				const git = (await import("simple-git")).default(mainRepoPath);
+				await git.fetch(["--prune"]);
+			} catch {
+				// Silently continue if fetch fails
+			}
+		}
+
+		if (manager.isCancellationRequested(workspaceId)) {
+			return;
+		}
+
+		// Step 3: Create worktree from existing branch
+		manager.updateProgress(workspaceId, "creating_worktree", "Creating git worktree...");
+		await createWorktree(mainRepoPath, branch, worktreePath, {
+			createBranch: false,
+		});
+		manager.markWorktreeCreated(workspaceId);
+
+		if (manager.isCancellationRequested(workspaceId)) {
+			try {
+				await removeWorktree(mainRepoPath, worktreePath);
+			} catch (e) {
+				console.error("[workspace-init] Failed to cleanup worktree after cancel:", e);
+			}
+			return;
+		}
+
+		// Step 4: Copy config
+		manager.updateProgress(workspaceId, "copying_config", "Copying configuration...");
+		copySupersetConfigToWorktree(mainRepoPath, worktreePath);
+
+		if (manager.isCancellationRequested(workspaceId)) {
+			try {
+				await removeWorktree(mainRepoPath, worktreePath);
+			} catch (e) {
+				console.error("[workspace-init] Failed to cleanup worktree after cancel:", e);
+			}
+			return;
+		}
+
+		// Step 5: Finalize
+		manager.updateProgress(workspaceId, "finalizing", "Finalizing setup...");
+
+		localDb
+			.update(worktrees)
+			.set({
+				gitStatus: {
+					branch,
+					needsRebase: false,
+					lastRefreshed: Date.now(),
+				},
+			})
+			.where(eq(worktrees.id, worktreeId))
+			.run();
+
+		manager.updateProgress(workspaceId, "ready", "Ready");
+
+		track("workspace_initialized", {
+			workspace_id: workspaceId,
+			project_id: projectId,
+			branch,
+			from_existing: true,
+		});
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		console.error(`[workspace-init] Failed to initialize ${workspaceId}:`, errorMessage);
+
+		if (manager.wasWorktreeCreated(workspaceId)) {
+			try {
+				await removeWorktree(mainRepoPath, worktreePath);
+			} catch (cleanupError) {
+				console.error("[workspace-init] Failed to cleanup partial worktree:", cleanupError);
+			}
+		}
+
+		manager.updateProgress(workspaceId, "failed", "Initialization failed", errorMessage);
+	} finally {
+		manager.finalizeJob(workspaceId);
+		manager.releaseProjectLock(projectId);
+	}
+}

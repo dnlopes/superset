@@ -24,7 +24,10 @@ import {
 	worktreeExists,
 } from "../utils/git";
 import { loadSetupConfig } from "../utils/setup";
-import { initializeWorkspaceWorktree } from "../utils/workspace-init";
+import {
+	initializeExistingBranchWorktree,
+	initializeWorkspaceWorktree,
+} from "../utils/workspace-init";
 
 export const createCreateProcedures = () => {
 	return router({
@@ -329,6 +332,107 @@ export const createCreateProcedures = () => {
 					initialCommands: setupConfig?.setup || null,
 					worktreePath: worktree.path,
 					projectId: project.id,
+				};
+			}),
+
+		createFromExistingBranch: publicProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					branch: z.string(),
+					name: z.string().optional(),
+				}),
+			)
+			.mutation(async ({ input }) => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) {
+					throw new Error(`Project ${input.projectId} not found`);
+				}
+
+				// Check if branch already has a worktree
+				const existingWorktree = localDb
+					.select()
+					.from(worktrees)
+					.where(eq(worktrees.projectId, input.projectId))
+					.all()
+					.find((wt) => wt.branch === input.branch);
+
+				if (existingWorktree) {
+					throw new Error(
+						`Branch "${input.branch}" already has a worktree. Use "Open Existing" to reopen it.`,
+					);
+				}
+
+				const worktreePath = join(
+					homedir(),
+					SUPERSET_DIR_NAME,
+					WORKTREES_DIR_NAME,
+					project.name,
+					input.branch,
+				);
+
+				// Insert worktree record (baseBranch is null for existing branches)
+				const worktree = localDb
+					.insert(worktrees)
+					.values({
+						projectId: input.projectId,
+						path: worktreePath,
+						branch: input.branch,
+						baseBranch: null,
+						gitStatus: null,
+					})
+					.returning()
+					.get();
+
+				const maxTabOrder = getMaxWorkspaceTabOrder(input.projectId);
+
+				const workspace = localDb
+					.insert(workspaces)
+					.values({
+						projectId: input.projectId,
+						worktreeId: worktree.id,
+						type: "worktree",
+						branch: input.branch,
+						name: input.name ?? input.branch,
+						tabOrder: maxTabOrder + 1,
+					})
+					.returning()
+					.get();
+
+				setLastActiveWorkspace(workspace.id);
+				activateProject(project);
+
+				track("workspace_created", {
+					workspace_id: workspace.id,
+					project_id: project.id,
+					branch: input.branch,
+					from_existing: true,
+				});
+
+				workspaceInitManager.startJob(workspace.id, input.projectId);
+
+				// Start background initialization
+				initializeExistingBranchWorktree({
+					workspaceId: workspace.id,
+					projectId: input.projectId,
+					worktreeId: worktree.id,
+					worktreePath,
+					branch: input.branch,
+					mainRepoPath: project.mainRepoPath,
+				});
+
+				const setupConfig = loadSetupConfig(project.mainRepoPath);
+
+				return {
+					workspace,
+					initialCommands: setupConfig?.setup || null,
+					worktreePath,
+					projectId: project.id,
+					isInitializing: true,
 				};
 			}),
 	});
