@@ -124,11 +124,18 @@ export function generateBranchName(): string {
 	return `${name}-${suffix}`;
 }
 
+export interface CreateWorktreeOptions {
+	/** If true, creates a new branch with `-b`. If false, uses existing branch. */
+	createBranch: boolean;
+	/** The ref to branch from. Only used when createBranch is true. */
+	startPoint?: string;
+}
+
 export async function createWorktree(
 	mainRepoPath: string,
 	branch: string,
 	worktreePath: string,
-	startPoint = "origin/main",
+	options: CreateWorktreeOptions,
 ): Promise<void> {
 	const usesLfs = await repoUsesLfs(mainRepoPath);
 
@@ -148,26 +155,24 @@ export async function createWorktree(
 			}
 		}
 
-		await execFileAsync(
-			"git",
-			[
-				"-C",
-				mainRepoPath,
-				"worktree",
-				"add",
-				worktreePath,
-				"-b",
-				branch,
-				// Append ^{commit} to force Git to treat the startPoint as a commit,
-				// not a branch ref. This prevents implicit upstream tracking when
-				// creating a new branch from a remote branch like origin/main.
-				`${startPoint}^{commit}`,
-			],
-			{ env, timeout: 120_000 },
-		);
+		const args = ["-C", mainRepoPath, "worktree", "add", worktreePath];
+
+		if (options.createBranch) {
+			// Create new branch: git worktree add <path> -b <branch> <startPoint>^{commit}
+			const startPoint = options.startPoint || "origin/main";
+			// Append ^{commit} to force Git to treat the startPoint as a commit,
+			// not a branch ref. This prevents implicit upstream tracking when
+			// creating a new branch from a remote branch like origin/main.
+			args.push("-b", branch, `${startPoint}^{commit}`);
+		} else {
+			// Use existing branch: git worktree add <path> <branch>
+			args.push(branch);
+		}
+
+		await execFileAsync("git", args, { env, timeout: 120_000 });
 
 		console.log(
-			`Created worktree at ${worktreePath} with branch ${branch} from ${startPoint}`,
+			`Created worktree at ${worktreePath} with branch ${branch}${options.createBranch ? ` from ${options.startPoint}` : " (existing)"}`,
 		);
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);

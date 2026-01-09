@@ -287,6 +287,77 @@ describe("getDefaultBranch", () => {
 	});
 });
 
+describe("createWorktree", () => {
+	beforeEach(() => {
+		mkdirSync(TEST_DIR, { recursive: true });
+	});
+
+	afterEach(() => {
+		if (existsSync(TEST_DIR)) {
+			rmSync(TEST_DIR, { recursive: true, force: true });
+		}
+	});
+
+	test("creates worktree from existing local branch", async () => {
+		const repoPath = createTestRepo("existing-branch-test");
+
+		// Create initial commit on main
+		writeFileSync(join(repoPath, "file.txt"), "content");
+		execSync("git add . && git commit -m 'initial'", {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
+
+		// Create an existing branch
+		execSync("git branch feature-branch", { cwd: repoPath, stdio: "ignore" });
+
+		const { createWorktree } = await import("./git");
+		const worktreePath = join(TEST_DIR, "worktree-existing");
+
+		await createWorktree(repoPath, "feature-branch", worktreePath, {
+			createBranch: false,
+		});
+
+		// Verify worktree was created
+		expect(existsSync(worktreePath)).toBe(true);
+		expect(existsSync(join(worktreePath, "file.txt"))).toBe(true);
+
+		// Verify we're on the right branch
+		const branch = execSync("git branch --show-current", {
+			cwd: worktreePath,
+			encoding: "utf-8",
+		}).trim();
+		expect(branch).toBe("feature-branch");
+	});
+
+	test("creates worktree with new branch from startPoint", async () => {
+		const repoPath = createTestRepo("new-branch-test");
+
+		// Create initial commit
+		writeFileSync(join(repoPath, "file.txt"), "content");
+		execSync("git add . && git commit -m 'initial'", {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
+
+		const { createWorktree } = await import("./git");
+		const worktreePath = join(TEST_DIR, "worktree-new");
+
+		await createWorktree(repoPath, "new-feature", worktreePath, {
+			createBranch: true,
+			startPoint: "HEAD",
+		});
+
+		expect(existsSync(worktreePath)).toBe(true);
+
+		const branch = execSync("git branch --show-current", {
+			cwd: worktreePath,
+			encoding: "utf-8",
+		}).trim();
+		expect(branch).toBe("new-feature");
+	});
+});
+
 describe("Shell Environment", () => {
 	test("getShellEnvironment returns PATH", async () => {
 		const { getShellEnvironment } = await import("./shell-env");
