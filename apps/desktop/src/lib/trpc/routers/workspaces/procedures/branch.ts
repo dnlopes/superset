@@ -1,4 +1,4 @@
-import { projects, workspaces } from "@superset/local-db";
+import { projects, workspaces, worktrees } from "@superset/local-db";
 import { eq } from "drizzle-orm";
 import { localDb } from "main/lib/local-db";
 import { terminalManager } from "main/lib/terminal";
@@ -99,6 +99,93 @@ export const createBranchProcedures = () => {
 				return {
 					workspace: updatedWorkspace,
 					worktreePath: project.mainRepoPath,
+				};
+			}),
+
+		getAvailableBranches: publicProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+				}),
+			)
+			.query(async ({ input }) => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) {
+					throw new Error(`Project ${input.projectId} not found`);
+				}
+
+				const branches = await listBranches(project.mainRepoPath, {
+					fetch: false,
+				});
+
+				// Get branches in use by worktrees
+				const projectWorktrees = localDb
+					.select()
+					.from(worktrees)
+					.where(eq(worktrees.projectId, input.projectId))
+					.all();
+				const inUseBranches = new Set(projectWorktrees.map((wt) => wt.branch));
+
+				// Filter out in-use branches and deduplicate (local takes precedence)
+				const localSet = new Set(branches.local);
+				const availableLocal = branches.local.filter(
+					(b) => !inUseBranches.has(b),
+				);
+				const availableRemote = branches.remote.filter(
+					(b) => !inUseBranches.has(b) && !localSet.has(b),
+				);
+
+				return {
+					local: availableLocal,
+					remote: availableRemote,
+					inUse: Array.from(inUseBranches),
+				};
+			}),
+
+		fetchBranches: publicProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+				}),
+			)
+			.mutation(async ({ input }) => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) {
+					throw new Error(`Project ${input.projectId} not found`);
+				}
+
+				// Fetch and return updated branches
+				const branches = await listBranches(project.mainRepoPath, {
+					fetch: true,
+				});
+
+				const projectWorktrees = localDb
+					.select()
+					.from(worktrees)
+					.where(eq(worktrees.projectId, input.projectId))
+					.all();
+				const inUseBranches = new Set(projectWorktrees.map((wt) => wt.branch));
+
+				const localSet = new Set(branches.local);
+				const availableLocal = branches.local.filter(
+					(b) => !inUseBranches.has(b),
+				);
+				const availableRemote = branches.remote.filter(
+					(b) => !inUseBranches.has(b) && !localSet.has(b),
+				);
+
+				return {
+					local: availableLocal,
+					remote: availableRemote,
+					inUse: Array.from(inUseBranches),
 				};
 			}),
 	});
