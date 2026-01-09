@@ -353,7 +353,11 @@ export async function initializeExistingBranchWorktree({
 		}
 
 		// Step 2: Fetch latest
-		manager.updateProgress(workspaceId, "fetching", "Fetching latest changes...");
+		manager.updateProgress(
+			workspaceId,
+			"fetching",
+			"Fetching latest changes...",
+		);
 		const hasRemote = await hasOriginRemote(mainRepoPath);
 		if (hasRemote) {
 			try {
@@ -369,7 +373,11 @@ export async function initializeExistingBranchWorktree({
 		}
 
 		// Step 3: Create worktree from existing branch
-		manager.updateProgress(workspaceId, "creating_worktree", "Creating git worktree...");
+		manager.updateProgress(
+			workspaceId,
+			"creating_worktree",
+			"Creating git worktree...",
+		);
 		await createWorktree(mainRepoPath, branch, worktreePath, {
 			createBranch: false,
 		});
@@ -379,20 +387,30 @@ export async function initializeExistingBranchWorktree({
 			try {
 				await removeWorktree(mainRepoPath, worktreePath);
 			} catch (e) {
-				console.error("[workspace-init] Failed to cleanup worktree after cancel:", e);
+				console.error(
+					"[workspace-init] Failed to cleanup worktree after cancel:",
+					e,
+				);
 			}
 			return;
 		}
 
 		// Step 4: Copy config
-		manager.updateProgress(workspaceId, "copying_config", "Copying configuration...");
+		manager.updateProgress(
+			workspaceId,
+			"copying_config",
+			"Copying configuration...",
+		);
 		copySupersetConfigToWorktree(mainRepoPath, worktreePath);
 
 		if (manager.isCancellationRequested(workspaceId)) {
 			try {
 				await removeWorktree(mainRepoPath, worktreePath);
 			} catch (e) {
-				console.error("[workspace-init] Failed to cleanup worktree after cancel:", e);
+				console.error(
+					"[workspace-init] Failed to cleanup worktree after cancel:",
+					e,
+				);
 			}
 			return;
 		}
@@ -422,17 +440,28 @@ export async function initializeExistingBranchWorktree({
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		console.error(`[workspace-init] Failed to initialize ${workspaceId}:`, errorMessage);
+		console.error(
+			`[workspace-init] Failed to initialize ${workspaceId}:`,
+			errorMessage,
+		);
 
 		if (manager.wasWorktreeCreated(workspaceId)) {
 			try {
 				await removeWorktree(mainRepoPath, worktreePath);
 			} catch (cleanupError) {
-				console.error("[workspace-init] Failed to cleanup partial worktree:", cleanupError);
+				console.error(
+					"[workspace-init] Failed to cleanup partial worktree:",
+					cleanupError,
+				);
 			}
 		}
 
-		manager.updateProgress(workspaceId, "failed", "Initialization failed", errorMessage);
+		manager.updateProgress(
+			workspaceId,
+			"failed",
+			"Initialization failed",
+			errorMessage,
+		);
 	} finally {
 		manager.finalizeJob(workspaceId);
 		manager.releaseProjectLock(projectId);

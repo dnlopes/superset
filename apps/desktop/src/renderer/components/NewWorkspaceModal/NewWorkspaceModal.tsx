@@ -33,12 +33,16 @@ import { GoGitBranch } from "react-icons/go";
 import { HiCheck, HiChevronDown, HiChevronUpDown } from "react-icons/hi2";
 import { formatRelativeTime } from "renderer/lib/formatRelativeTime";
 import { trpc } from "renderer/lib/trpc";
-import { useCreateWorkspace } from "renderer/react-query/workspaces";
+import {
+	useCreateFromExistingBranch,
+	useCreateWorkspace,
+} from "renderer/react-query/workspaces";
 import {
 	useCloseNewWorkspaceModal,
 	useNewWorkspaceModalOpen,
 	usePreSelectedProjectId,
 } from "renderer/stores/new-workspace-modal";
+import { BranchPicker } from "./components/BranchPicker";
 import { ExistingWorktreesList } from "./components/ExistingWorktreesList";
 
 function generateBranchFromTitle(title: string): string {
@@ -73,6 +77,8 @@ export function NewWorkspaceModal() {
 	const [baseBranchOpen, setBaseBranchOpen] = useState(false);
 	const [branchSearch, setBranchSearch] = useState("");
 	const [showAdvanced, setShowAdvanced] = useState(false);
+	const [existingBranch, setExistingBranch] = useState<string | null>(null);
+	const [_isRemoteBranch, setIsRemoteBranch] = useState(false);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 
 	// Debounced title update to reduce re-renders from derived state calculations
@@ -105,6 +111,7 @@ export function NewWorkspaceModal() {
 		{ enabled: !!selectedProjectId },
 	);
 	const createWorkspace = useCreateWorkspace();
+	const createFromExisting = useCreateFromExistingBranch();
 
 	const currentProjectId = activeWorkspace?.projectId;
 
@@ -154,6 +161,8 @@ export function NewWorkspaceModal() {
 		setBaseBranch(null);
 		setBranchSearch("");
 		setShowAdvanced(false);
+		setExistingBranch(null);
+		setIsRemoteBranch(false);
 	};
 
 	// Focus title input when modal opens and project is selected
@@ -209,6 +218,31 @@ export function NewWorkspaceModal() {
 			handleClose();
 
 			// Show appropriate toast based on initialization state
+			if (result.isInitializing) {
+				toast.success("Workspace created", {
+					description: "Setting up in the background...",
+				});
+			} else {
+				toast.success("Workspace created");
+			}
+		} catch (err) {
+			toast.error(
+				err instanceof Error ? err.message : "Failed to create workspace",
+			);
+		}
+	};
+
+	const handleCreateFromExistingBranch = async () => {
+		if (!selectedProjectId || !existingBranch) return;
+
+		try {
+			const result = await createFromExisting.mutateAsync({
+				projectId: selectedProjectId,
+				branch: existingBranch,
+			});
+
+			handleClose();
+
 			if (result.isInitializing) {
 				toast.success("Workspace created", {
 					description: "Setting up in the background...",
@@ -442,10 +476,42 @@ export function NewWorkspaceModal() {
 									</Button>
 								</div>
 							) : (
-								<ExistingWorktreesList
-									projectId={selectedProjectId}
-									onOpenSuccess={handleClose}
-								/>
+								<div className="space-y-4">
+									<div className="space-y-3">
+										<div className="space-y-1.5">
+											<span className="text-xs text-muted-foreground">
+												Branch
+											</span>
+											<BranchPicker
+												projectId={selectedProjectId}
+												value={existingBranch}
+												onChange={(branch, isRemote) => {
+													setExistingBranch(branch);
+													setIsRemoteBranch(isRemote);
+												}}
+												disabled={createFromExisting.isPending}
+											/>
+										</div>
+
+										<Button
+											className="w-full h-8 text-sm"
+											onClick={handleCreateFromExistingBranch}
+											disabled={!existingBranch || createFromExisting.isPending}
+										>
+											Create Workspace
+										</Button>
+									</div>
+
+									<div className="pt-2 border-t border-border">
+										<div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider py-1">
+											Reopen closed worktrees
+										</div>
+										<ExistingWorktreesList
+											projectId={selectedProjectId}
+											onOpenSuccess={handleClose}
+										/>
+									</div>
+								</div>
 							)}
 						</div>
 					</>
