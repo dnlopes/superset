@@ -11,7 +11,7 @@ import {
 	CommandList,
 } from "@superset/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GoGitBranch } from "react-icons/go";
 import { HiCheck, HiChevronUpDown } from "react-icons/hi2";
 import { LuLoader, LuRefreshCw } from "react-icons/lu";
@@ -20,7 +20,7 @@ import { trpc } from "renderer/lib/trpc";
 interface BranchPickerProps {
 	projectId: string;
 	value: string | null;
-	onChange: (branch: string, isRemote: boolean) => void;
+	onChange: (branch: string) => void;
 	disabled?: boolean;
 }
 
@@ -32,6 +32,7 @@ export function BranchPicker({
 }: BranchPickerProps) {
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState("");
+	const hasFetchedRef = useRef(false);
 
 	const {
 		data: branches,
@@ -48,13 +49,18 @@ export function BranchPicker({
 		},
 	});
 
-	// Trigger background fetch when component mounts
+	// Trigger background fetch once when component mounts or projectId changes
 	useEffect(() => {
-		if (projectId && !fetchMutation.isPending) {
+		if (projectId) {
+			// Reset and fetch when projectId changes
+			hasFetchedRef.current = true;
 			fetchMutation.mutate({ projectId });
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [projectId, fetchMutation.isPending, fetchMutation.mutate]);
+		return () => {
+			// Reset on cleanup so next projectId triggers a fresh fetch
+			hasFetchedRef.current = false;
+		};
+	}, [projectId, fetchMutation.mutate]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally exclude fetchMutation to run once per projectId
 
 	const filteredLocal = (branches?.local ?? []).filter((b) =>
 		b.toLowerCase().includes(search.toLowerCase()),
@@ -121,7 +127,7 @@ export function BranchPicker({
 										key={`local-${branch}`}
 										value={branch}
 										onSelect={() => {
-											onChange(branch, false);
+											onChange(branch);
 											setOpen(false);
 											setSearch("");
 										}}
@@ -145,7 +151,7 @@ export function BranchPicker({
 										key={`remote-${branch}`}
 										value={branch}
 										onSelect={() => {
-											onChange(branch, true);
+											onChange(branch);
 											setOpen(false);
 											setSearch("");
 										}}

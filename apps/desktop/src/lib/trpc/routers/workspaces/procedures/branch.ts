@@ -12,6 +12,30 @@ import {
 } from "../utils/db-helpers";
 import { listBranches, safeCheckoutBranch } from "../utils/git";
 
+/**
+ * Filters branches to exclude those already in use by worktrees.
+ * Remote branches with the same name as local branches are excluded to avoid duplicates.
+ */
+function filterAvailableBranches({
+	branches,
+	inUseBranches,
+}: {
+	branches: { local: string[]; remote: string[] };
+	inUseBranches: Set<string>;
+}): { local: string[]; remote: string[]; inUse: string[] } {
+	const localSet = new Set(branches.local);
+	const availableLocal = branches.local.filter((b) => !inUseBranches.has(b));
+	const availableRemote = branches.remote.filter(
+		(b) => !inUseBranches.has(b) && !localSet.has(b),
+	);
+
+	return {
+		local: availableLocal,
+		remote: availableRemote,
+		inUse: Array.from(inUseBranches),
+	};
+}
+
 export const createBranchProcedures = () => {
 	return router({
 		getBranches: publicProcedure
@@ -122,7 +146,6 @@ export const createBranchProcedures = () => {
 					fetch: false,
 				});
 
-				// Get branches in use by worktrees
 				const projectWorktrees = localDb
 					.select()
 					.from(worktrees)
@@ -130,20 +153,7 @@ export const createBranchProcedures = () => {
 					.all();
 				const inUseBranches = new Set(projectWorktrees.map((wt) => wt.branch));
 
-				// Filter out in-use branches and deduplicate (local takes precedence)
-				const localSet = new Set(branches.local);
-				const availableLocal = branches.local.filter(
-					(b) => !inUseBranches.has(b),
-				);
-				const availableRemote = branches.remote.filter(
-					(b) => !inUseBranches.has(b) && !localSet.has(b),
-				);
-
-				return {
-					local: availableLocal,
-					remote: availableRemote,
-					inUse: Array.from(inUseBranches),
-				};
+				return filterAvailableBranches({ branches, inUseBranches });
 			}),
 
 		fetchBranches: publicProcedure
@@ -174,19 +184,7 @@ export const createBranchProcedures = () => {
 					.all();
 				const inUseBranches = new Set(projectWorktrees.map((wt) => wt.branch));
 
-				const localSet = new Set(branches.local);
-				const availableLocal = branches.local.filter(
-					(b) => !inUseBranches.has(b),
-				);
-				const availableRemote = branches.remote.filter(
-					(b) => !inUseBranches.has(b) && !localSet.has(b),
-				);
-
-				return {
-					local: availableLocal,
-					remote: availableRemote,
-					inUse: Array.from(inUseBranches),
-				};
+				return filterAvailableBranches({ branches, inUseBranches });
 			}),
 	});
 };

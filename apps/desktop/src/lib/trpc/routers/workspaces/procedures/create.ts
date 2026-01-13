@@ -20,6 +20,7 @@ import {
 import {
 	generateBranchName,
 	getCurrentBranch,
+	listBranches,
 	safeCheckoutBranch,
 	worktreeExists,
 } from "../utils/git";
@@ -364,6 +365,19 @@ export const createCreateProcedures = () => {
 				if (existingWorktree) {
 					throw new Error(
 						`Branch "${input.branch}" already has a worktree. Use "Open Existing" to reopen it.`,
+					);
+				}
+
+				// Validate branch exists before creating DB records
+				const branches = await listBranches(project.mainRepoPath, {
+					fetch: false,
+				});
+				const branchExistsLocally = branches.local.includes(input.branch);
+				const branchExistsOnRemote = branches.remote.includes(input.branch);
+
+				if (!branchExistsLocally && !branchExistsOnRemote) {
+					throw new Error(
+						`Branch "${input.branch}" does not exist. Please select a valid branch.`,
 					);
 				}
 

@@ -78,7 +78,6 @@ export function NewWorkspaceModal() {
 	const [branchSearch, setBranchSearch] = useState("");
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [existingBranch, setExistingBranch] = useState<string | null>(null);
-	const [_isRemoteBranch, setIsRemoteBranch] = useState(false);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 
 	// Debounced title update to reduce re-renders from derived state calculations
@@ -162,7 +161,6 @@ export function NewWorkspaceModal() {
 		setBranchSearch("");
 		setShowAdvanced(false);
 		setExistingBranch(null);
-		setIsRemoteBranch(false);
 	};
 
 	// Focus title input when modal opens and project is selected
@@ -485,10 +483,7 @@ export function NewWorkspaceModal() {
 											<BranchPicker
 												projectId={selectedProjectId}
 												value={existingBranch}
-												onChange={(branch, isRemote) => {
-													setExistingBranch(branch);
-													setIsRemoteBranch(isRemote);
-												}}
+												onChange={(branch) => setExistingBranch(branch)}
 												disabled={createFromExisting.isPending}
 											/>
 										</div>
