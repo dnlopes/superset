@@ -166,7 +166,18 @@ export async function createWorktree(
 			args.push("-b", branch, `${startPoint}^{commit}`);
 		} else {
 			// Use existing branch: git worktree add <path> <branch>
-			args.push(branch);
+			// For remote-only branches, we need to create a local tracking branch
+			const git = simpleGit(mainRepoPath);
+			const localBranches = await git.branchLocal();
+			const branchExistsLocally = localBranches.all.includes(branch);
+
+			if (branchExistsLocally) {
+				args.push(branch);
+			} else {
+				// Branch doesn't exist locally - create local tracking branch from remote
+				// Use -b to create local branch that tracks the remote
+				args.push("-b", branch, `origin/${branch}`);
+			}
 		}
 
 		await execFileAsync("git", args, { env, timeout: 120_000 });

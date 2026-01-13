@@ -356,6 +356,54 @@ describe("createWorktree", () => {
 		}).trim();
 		expect(branch).toBe("new-feature");
 	});
+
+	test("creates worktree from remote-only branch", async () => {
+		const repoPath = createTestRepo("remote-only-branch-test");
+
+		// Create initial commit on main
+		writeFileSync(join(repoPath, "file.txt"), "content");
+		execSync("git add . && git commit -m 'initial'", {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
+
+		// Add a fake remote and create a remote tracking ref (simulates origin/feature-remote)
+		execSync("git remote add origin https://example.com/repo.git", {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
+		execSync("git update-ref refs/remotes/origin/feature-remote HEAD", {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
+
+		// Verify the branch does NOT exist locally
+		const localBranches = execSync("git branch --list feature-remote", {
+			cwd: repoPath,
+			encoding: "utf-8",
+		}).trim();
+		expect(localBranches).toBe("");
+
+		const { createWorktree } = await import("./git");
+		const worktreePath = join(TEST_DIR, "worktree-remote-only");
+
+		// This should work because createWorktree detects the branch is remote-only
+		// and uses origin/feature-remote instead of feature-remote
+		await createWorktree(repoPath, "feature-remote", worktreePath, {
+			createBranch: false,
+		});
+
+		// Verify worktree was created
+		expect(existsSync(worktreePath)).toBe(true);
+		expect(existsSync(join(worktreePath, "file.txt"))).toBe(true);
+
+		// Verify we're on the right branch (git creates a local tracking branch)
+		const branch = execSync("git branch --show-current", {
+			cwd: worktreePath,
+			encoding: "utf-8",
+		}).trim();
+		expect(branch).toBe("feature-remote");
+	});
 });
 
 describe("Shell Environment", () => {

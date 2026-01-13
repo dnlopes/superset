@@ -18,45 +18,90 @@ function createTestRepo(name: string): string {
 }
 
 describe("filterAvailableBranches", () => {
-	// Import the function directly to test it
-	// Note: Since filterAvailableBranches is a private function, we test it indirectly
-	// through the listBranches + filtering logic
-
 	test("filters out branches in use by worktrees", async () => {
-		const { listBranches } = await import("../utils/git");
-		const repoPath = createTestRepo("filter-inuse-test");
+		const { filterAvailableBranches } = await import("./branch");
 
-		// Create initial commit
-		writeFileSync(join(repoPath, "test.txt"), "content");
-		execSync("git add . && git commit -m 'initial'", {
-			cwd: repoPath,
-			stdio: "ignore",
-		});
-
-		// Create some branches
-		execSync("git branch feature-a", { cwd: repoPath, stdio: "ignore" });
-		execSync("git branch feature-b", { cwd: repoPath, stdio: "ignore" });
-
-		const branches = await listBranches(repoPath, { fetch: false });
-
-		// Simulate filtering with in-use branches
+		const branches = {
+			local: ["main", "feature-a", "feature-b"],
+			remote: ["main", "feature-c"],
+		};
 		const inUseBranches = new Set(["feature-a"]);
-		const _localSet = new Set(branches.local);
-		const availableLocal = branches.local.filter((b) => !inUseBranches.has(b));
+
+		const result = filterAvailableBranches({ branches, inUseBranches });
 
 		// feature-a should be filtered out
-		expect(availableLocal).not.toContain("feature-a");
-		expect(availableLocal).toContain("feature-b");
+		expect(result.local).not.toContain("feature-a");
+		expect(result.local).toContain("main");
+		expect(result.local).toContain("feature-b");
+		expect(result.inUse).toContain("feature-a");
 	});
 
-	beforeEach(() => {
-		mkdirSync(TEST_DIR, { recursive: true });
+	test("excludes remote branches that exist locally", async () => {
+		const { filterAvailableBranches } = await import("./branch");
+
+		const branches = {
+			local: ["main", "feature-a"],
+			remote: ["main", "feature-a", "feature-b"],
+		};
+		const inUseBranches = new Set<string>();
+
+		const result = filterAvailableBranches({ branches, inUseBranches });
+
+		// Remote "main" and "feature-a" should be excluded since they exist locally
+		expect(result.remote).not.toContain("main");
+		expect(result.remote).not.toContain("feature-a");
+		expect(result.remote).toContain("feature-b");
 	});
 
-	afterEach(() => {
-		if (existsSync(TEST_DIR)) {
-			rmSync(TEST_DIR, { recursive: true, force: true });
-		}
+	test("filters both local and remote in-use branches", async () => {
+		const { filterAvailableBranches } = await import("./branch");
+
+		const branches = {
+			local: ["main", "feature-a", "feature-b"],
+			remote: ["main", "feature-c", "feature-d"],
+		};
+		const inUseBranches = new Set(["feature-a", "feature-c"]);
+
+		const result = filterAvailableBranches({ branches, inUseBranches });
+
+		// feature-a should be filtered from local
+		expect(result.local).not.toContain("feature-a");
+		expect(result.local).toContain("feature-b");
+
+		// feature-c should be filtered from remote, main excluded because it exists locally
+		expect(result.remote).not.toContain("feature-c");
+		expect(result.remote).not.toContain("main");
+		expect(result.remote).toContain("feature-d");
+	});
+
+	test("handles empty branch lists", async () => {
+		const { filterAvailableBranches } = await import("./branch");
+
+		const branches = { local: [], remote: [] };
+		const inUseBranches = new Set<string>();
+
+		const result = filterAvailableBranches({ branches, inUseBranches });
+
+		expect(result.local).toEqual([]);
+		expect(result.remote).toEqual([]);
+		expect(result.inUse).toEqual([]);
+	});
+
+	test("returns all in-use branches in the inUse array", async () => {
+		const { filterAvailableBranches } = await import("./branch");
+
+		const branches = {
+			local: ["main"],
+			remote: [],
+		};
+		const inUseBranches = new Set(["feature-a", "feature-b", "feature-c"]);
+
+		const result = filterAvailableBranches({ branches, inUseBranches });
+
+		expect(result.inUse).toHaveLength(3);
+		expect(result.inUse).toContain("feature-a");
+		expect(result.inUse).toContain("feature-b");
+		expect(result.inUse).toContain("feature-c");
 	});
 });
 

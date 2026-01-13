@@ -15,8 +15,9 @@ import { listBranches, safeCheckoutBranch } from "../utils/git";
 /**
  * Filters branches to exclude those already in use by worktrees.
  * Remote branches with the same name as local branches are excluded to avoid duplicates.
+ * @internal Exported for testing
  */
-function filterAvailableBranches({
+export function filterAvailableBranches({
 	branches,
 	inUseBranches,
 }: {

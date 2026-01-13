@@ -1,4 +1,4 @@
-import { projects, worktrees } from "@superset/local-db";
+import { projects, workspaces, worktrees } from "@superset/local-db";
 import { eq } from "drizzle-orm";
 import { track } from "main/lib/analytics";
 import { localDb } from "main/lib/local-db";
@@ -454,6 +454,20 @@ export async function initializeExistingBranchWorktree({
 					cleanupError,
 				);
 			}
+		}
+
+		// Clean up DB records to avoid orphaned entries
+		try {
+			localDb.delete(workspaces).where(eq(workspaces.id, workspaceId)).run();
+			localDb.delete(worktrees).where(eq(worktrees.id, worktreeId)).run();
+			console.log(
+				`[workspace-init] Cleaned up DB records for failed workspace ${workspaceId}`,
+			);
+		} catch (dbCleanupError) {
+			console.error(
+				"[workspace-init] Failed to cleanup DB records:",
+				dbCleanupError,
+			);
 		}
 
 		manager.updateProgress(
